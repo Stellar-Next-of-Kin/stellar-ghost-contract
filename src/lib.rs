@@ -56,7 +56,6 @@ pub struct Lockbox;
 
 #[contractimpl]
 impl Lockbox {
-    /// Initialize a new lockbox
     pub fn initialize(
         env: Env,
         owner: Address,
@@ -66,15 +65,11 @@ impl Lockbox {
 
         let storage = env.storage().persistent();
         
-        // Check if already initialized
         if storage.has(&String::from_slice(&env, b"owner")) {
             return Err(LockboxError::UnauthorizedAccess);
         }
 
-        // Store owner
         storage.set(&String::from_slice(&env, b"owner"), &owner);
-
-        // Store initial state
         storage.set(&String::from_slice(&env, b"last_ping"), &env.ledger().timestamp());
         storage.set(&String::from_slice(&env, b"threshold"), &inactivity_threshold);
         storage.set(&String::from_slice(&env, b"total_assets"), &0i128);
@@ -86,20 +81,16 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Owner pings to reset inactivity timer
     pub fn ping(env: Env) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Get and verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
 
-        // Update last ping timestamp
         let current_time = env.ledger().timestamp();
         storage.set(&String::from_slice(&env, b"last_ping"), &current_time);
 
-        // Emit event
         env.events().publish(
             ("lockbox", "ping"),
             (owner.clone(), current_time),
@@ -108,7 +99,6 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Add a new beneficiary
     pub fn add_beneficiary(
         env: Env,
         beneficiary: Address,
@@ -117,17 +107,14 @@ impl Lockbox {
     ) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
 
-        // Validate percentage
         if percentage > 100 {
             return Err(LockboxError::InvalidAllocation);
         }
 
-        // Store beneficiary
         let key = String::from_slice(&env, format!("beneficiary_{}", beneficiary).as_bytes());
         let share = BeneficiaryShare {
             address: beneficiary.clone(),
@@ -137,12 +124,10 @@ impl Lockbox {
         };
         storage.set(&key, &share);
 
-        // Increment beneficiary count
         let count: u32 = storage.get(&String::from_slice(&env, b"beneficiary_count"))
             .unwrap_or(0);
         storage.set(&String::from_slice(&env, b"beneficiary_count"), &(count + 1));
 
-        // Emit event
         env.events().publish(
             ("lockbox", "beneficiary_added"),
             (owner, beneficiary, percentage),
@@ -151,14 +136,12 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Deposit assets into lockbox
     pub fn deposit_assets(
         env: Env,
         amount: i128,
     ) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
@@ -167,12 +150,10 @@ impl Lockbox {
             return Err(LockboxError::InvalidThreshold);
         }
 
-        // Update total assets
         let current: i128 = storage.get(&String::from_slice(&env, b"total_assets"))
             .unwrap_or(0);
         storage.set(&String::from_slice(&env, b"total_assets"), &(current + amount));
 
-        // Emit event
         env.events().publish(
             ("lockbox", "deposit"),
             (owner, amount),
@@ -181,18 +162,15 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Trigger inheritance release when threshold exceeded
     pub fn trigger_release(env: Env) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Check if already released
         let is_released: bool = storage.get(&String::from_slice(&env, b"is_released"))
             .unwrap_or(false);
         if is_released {
             return Err(LockboxError::UnauthorizedAccess);
         }
 
-        // Check threshold
         let last_ping: u64 = storage.get(&String::from_slice(&env, b"last_ping"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         let threshold: u64 = storage.get(&String::from_slice(&env, b"threshold"))
@@ -203,11 +181,9 @@ impl Lockbox {
             return Err(LockboxError::ThresholdNotExceeded);
         }
 
-        // Mark as released
         storage.set(&String::from_slice(&env, b"is_released"), &true);
         storage.set(&String::from_slice(&env, b"release_timestamp"), &current_time);
 
-        // Emit event
         env.events().publish(
             ("lockbox", "inheritance_triggered"),
             current_time,
@@ -216,7 +192,6 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Beneficiary claims their inheritance
     pub fn claim_inheritance(
         env: Env,
         beneficiary: Address,
@@ -224,14 +199,12 @@ impl Lockbox {
         let storage = env.storage().persistent();
         beneficiary.require_auth();
 
-        // Verify released
         let is_released: bool = storage.get(&String::from_slice(&env, b"is_released"))
             .unwrap_or(false);
         if !is_released {
             return Err(LockboxError::ThresholdNotExceeded);
         }
 
-        // Get beneficiary share
         let key = String::from_slice(&env, format!("beneficiary_{}", beneficiary).as_bytes());
         let mut share: BeneficiaryShare = storage.get(&key)
             .ok_or(LockboxError::BeneficiaryNotFound)?;
@@ -240,16 +213,13 @@ impl Lockbox {
             return Err(LockboxError::AlreadyClaimed);
         }
 
-        // Calculate payout
         let total: i128 = storage.get(&String::from_slice(&env, b"total_assets"))
             .unwrap_or(0);
         let payout = (total * share.percentage as i128) / 100;
 
-        // Mark as claimed
         share.claimed = true;
         storage.set(&key, &share);
 
-        // Emit event
         env.events().publish(
             ("lockbox", "inheritance_claimed"),
             (beneficiary.clone(), payout),
@@ -258,7 +228,6 @@ impl Lockbox {
         Ok(payout)
     }
 
-    /// Get current contract state
     pub fn get_state(env: Env) -> LockboxState {
         let storage = env.storage().persistent();
         
@@ -282,7 +251,6 @@ impl Lockbox {
         }
     }
 
-    /// Get days until trigger
     pub fn get_days_until_trigger(env: Env) -> i64 {
         let storage = env.storage().persistent();
         
@@ -300,14 +268,12 @@ impl Lockbox {
         }
     }
 
-    /// Set encrypted payload CID
     pub fn set_encrypted_payload(
         env: Env,
         cid: String,
     ) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
@@ -316,19 +282,17 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Update inactivity threshold
     pub fn set_inactivity_threshold(
         env: Env,
         new_threshold: u64,
     ) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
 
-        if new_threshold < 86400 {  // Minimum 1 day
+        if new_threshold < 86400 {
             return Err(LockboxError::InvalidThreshold);
         }
 
@@ -342,33 +306,28 @@ impl Lockbox {
         Ok(())
     }
 
-    /// Withdraw assets (before release)
     pub fn withdraw_assets(
         env: Env,
         amount: i128,
     ) -> Result<(), LockboxError> {
         let storage = env.storage().persistent();
         
-        // Verify owner
         let owner: Address = storage.get(&String::from_slice(&env, b"owner"))
             .ok_or(LockboxError::UnauthorizedAccess)?;
         owner.require_auth();
 
-        // Check not released
         let is_released: bool = storage.get(&String::from_slice(&env, b"is_released"))
             .unwrap_or(false);
         if is_released {
             return Err(LockboxError::UnauthorizedAccess);
         }
 
-        // Check sufficient balance
         let current: i128 = storage.get(&String::from_slice(&env, b"total_assets"))
             .unwrap_or(0);
         if amount > current {
             return Err(LockboxError::InsufficientBalance);
         }
 
-        // Update balance
         storage.set(&String::from_slice(&env, b"total_assets"), &(current - amount));
 
         env.events().publish(
@@ -386,114 +345,6 @@ mod tests {
 
     #[test]
     fn test_placeholder() {
-        // Tests will be implemented with proper Soroban test setup
         assert_eq!(1, 1);
     }
 }
-
-// ===== Additional Security & Tests =====
-
-#[cfg(test)]
-mod comprehensive_tests {
-    use super::*;
-
-    #[test]
-    fn test_invalid_owner_cannot_ping() {
-        // Tests owner authorization
-        assert_eq!(1, 1); // Placeholder for Soroban test setup
-    }
-
-    #[test]
-    fn test_beneficiary_percentage_validation() {
-        // Ensures percentages don't exceed 100%
-        assert!(100 >= 100);
-    }
-
-    #[test]
-    fn test_threshold_minimum_validation() {
-        // Prevents unreasonably short thresholds
-        let min_threshold = 86400; // 1 day minimum
-        assert!(min_threshold >= 86400);
-    }
-
-    #[test]
-    fn test_double_claim_prevention() {
-        // Prevents beneficiary from claiming twice
-        assert_eq!(true, true);
-    }
-
-    #[test]
-    fn test_early_trigger_prevention() {
-        // Ensures inheritance can't trigger before threshold
-        assert_eq!(true, true);
-    }
-
-    #[test]
-    fn test_insufficient_balance_error() {
-        // Tests balance validation on claim
-        assert_eq!(true, true);
-    }
-}
-
-// Production-grade error logging
-impl LockboxError {
-    pub fn message(&self) -> &'static str {
-        match self {
-            LockboxError::UnauthorizedAccess => "Unauthorized access attempt",
-            LockboxError::InvalidAllocation => "Invalid allocation percentage",
-            LockboxError::BeneficiaryNotFound => "Beneficiary not found",
-            LockboxError::AlreadyClaimed => "Already claimed inheritance",
-            LockboxError::ThresholdNotExceeded => "Threshold not yet exceeded",
-            LockboxError::InsufficientBalance => "Insufficient balance",
-            LockboxError::InvalidThreshold => "Invalid threshold value",
-        }
-    }
-}
-// Feature 1: Production enhancement
-// Feature 2: Production enhancement
-// Feature 3: Production enhancement
-// Feature 4: Production enhancement
-// Feature 5: Production enhancement
-// Feature 6: Production enhancement
-// Feature 7: Production enhancement
-// Feature 8: Production enhancement
-// Feature 9: Production enhancement
-// Feature 10: Production enhancement
-// Feature 11: Production enhancement
-// Feature 12: Production enhancement
-// Feature 13: Production enhancement
-// Feature 14: Production enhancement
-// Feature 15: Production enhancement
-// Feature 16: Production enhancement
-// Feature 17: Production enhancement
-// Feature 18: Production enhancement
-// Feature 19: Production enhancement
-// Feature 20: Production enhancement
-// Feature 21: Production enhancement
-// Feature 22: Production enhancement
-// Feature 23: Production enhancement
-// Feature 24: Production enhancement
-// Feature 25: Production enhancement
-// Feature 26: Production enhancement
-// Feature 27: Production enhancement
-// Feature 28: Production enhancement
-// Feature 29: Production enhancement
-// Feature 30: Production enhancement
-// Feature 31: Production enhancement
-// Feature 32: Production enhancement
-// Feature 33: Production enhancement
-// Feature 34: Production enhancement
-// Feature 35: Production enhancement
-// Feature 36: Production enhancement
-// Feature 37: Production enhancement
-// Feature 38: Production enhancement
-// Feature 39: Production enhancement
-// Feature 40: Production enhancement
-// Feature 41: Production enhancement
-// Feature 42: Production enhancement
-// Feature 43: Production enhancement
-// Feature 44: Production enhancement
-// Feature 45: Production enhancement
-// Feature 46: Production enhancement
-// Feature 47: Production enhancement
-// Feature 48: Production enhancement
