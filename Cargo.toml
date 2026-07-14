@@ -1,0 +1,29 @@
+[package]
+name = "stellar-ghost-contract"
+version = "1.0.0"
+edition = "2021"
+authors = ["StellarGhost Contributors"]
+license = "MIT"
+description = "Soroban smart contract for decentralized estate planning"
+
+[dependencies]
+soroban-sdk = { version = "20.0", features = ["alloc"] }
+soroban-sdk-macros = "20.0"
+
+[dev-dependencies]
+soroban-sdk = { version = "20.0", features = ["alloc"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "stellar_ghost_contract"
+
+[[bin]]
+name = "stellar-ghost-contract"
+path = "src/bin.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
